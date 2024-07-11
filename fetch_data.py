@@ -184,11 +184,24 @@ def generate_article_with_llm(game_data):
     generator = pipeline('text-generation', model='EleutherAI/gpt-neo-125M', device=-1)
 
     # Create a detailed prompt for the LLM
-    prompt = f"Write a detailed sports news article about the baseball game between {game_data['game_info']['away_team']} and {game_data['game_info']['home_team']} on {game_data['game_info']['date']}. "
-    prompt += f"The final score was {game_data['linescore']['away_score']} to {game_data['linescore']['home_score']}. "
-    prompt += f"Highlights of the game include:\n"
+    prompt = (f"Write a detailed sports news article about the baseball game between {game_data['game_info']['away_team']} "
+              f"and {game_data['game_info']['home_team']} on {game_data['game_info']['date']}. The final score was {game_data['linescore']['away_score']} "
+              f"to {game_data['linescore']['home_score']}. The game was played at {game_data['game_info']['venue']} under {game_data['game_info']['weather']} "
+              f"conditions with a temperature of {game_data['game_info']['temp']} and {game_data['game_info']['wind']} wind.\n\n"
+              f"Highlights of the game include:\n")
     for highlight in game_data['highlights']:
-        prompt += f"- {highlight['title']} ({highlight['description']})\n"
+        prompt += f"- {highlight['title']}: {highlight['description']}\n"
+
+    prompt += "\nTop batting performances:\n"
+    for batter in game_data['batting_stats']['away'][:3] + game_data['batting_stats']['home'][:3]:
+        prompt += f"- {batter['name']} ({batter['position']}): {batter['h']} hits, {batter['rbi']} RBIs\n"
+
+    prompt += "\nTop pitching performances:\n"
+    for pitcher in game_data['pitching_stats']['away'][:2] + game_data['pitching_stats']['home'][:2]:
+        prompt += f"- {pitcher['name']}: {pitcher['ip']} innings pitched, {pitcher['so']} strikeouts\n"
+
+    prompt += ("\nCreate a narrative describing the key moments of the game, focusing on the performances of standout players "
+               "and the atmosphere in the stadium. Describe how the game unfolded and any critical plays that determined the outcome.\n\n")
 
     logging.info("Prompt created, starting generation")
     # Generate the article using the model
