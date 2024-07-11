@@ -160,26 +160,30 @@ def generate_narrative_style_article(game_data):
     device = -1  # Assuming CPU usage
     generator = pipeline('text-generation', model='EleutherAI/gpt-neo-125M', device=device)
 
-    # Construct a detailed prompt with unique player statistics
-    prompt = f"The game at {game_data['game_info']['venue']} on {game_data['game_info']['date']} featured a thrilling match between {game_data['game_info']['home_team']} and {game_data['game_info']['away_team']}. Here are some highlights and key performances:"
+    # Construct a narrative-driven prompt
+    prompt = f"On {game_data['game_info']['date']}, the {game_data['game_info']['home_team']} hosted the {game_data['game_info']['away_team']} at {game_data['game_info']['venue']}. The game featured several pivotal moments:"
 
-    player_contributions = {}
-    for team in ['home', 'away']:
-        for player_stats in game_data['batting_stats'][team]:
-            player_key = player_stats['name']
-            if player_key not in player_contributions or player_stats['h'] > player_contributions[player_key][1]:  # Only add if this is a better performance or not added yet
-                player_contributions[player_key] = (f"{player_stats['name']} with {player_stats['h']} hits and {player_stats['rbi']} RBIs", player_stats['h'])
+    # Include only significant highlights
+    for highlight in game_data['highlights'][:3]:  # Top 3 highlights
+        prompt += f"\n- {highlight['description']}"
 
-    for contribution, _ in player_contributions.values():
-        prompt += f"\n- {contribution}"
+    prompt += "\n\nKey player performances included:"
+    # Include impactful player stats selectively
+    for player_stats in game_data['batting_stats']['home']:
+        if player_stats['h'] > 0 or player_stats['rbi'] > 0:  # Only players with positive stats
+            prompt += f"\n- {player_stats['name']} made an impact with {player_stats['h']} hits and {player_stats['rbi']} RBIs."
 
-    logging.debug("Final prompt to model: " + prompt)
+    # Concise and clear closing statement
+    prompt += f"\nThe game concluded with a {game_data['linescore']['home_score']}-{game_data['linescore']['away_score']} victory for the {game_data['game_info']['home_team']}, capturing a crucial win that left fans exhilarated and looking forward to future challenges."
+
+    logging.debug("Final narrative prompt: " + prompt)
 
     # Generate the narrative
-    generated_text = generator(prompt, max_length=500, num_return_sequences=1, no_repeat_ngram_size=2, truncation=True)[0]['generated_text']
+    generated_text = generator(prompt, max_length=800, num_return_sequences=1, no_repeat_ngram_size=2, truncation=True)[0]['generated_text']
     logging.info("Narrative article generated successfully")
 
     return generated_text
+
 # Example usage
 if __name__ == "__main__":
     logging.info("Script started")
