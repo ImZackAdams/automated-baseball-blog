@@ -2,19 +2,15 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Baseball Blog</title>
+    <title>Orioles Game Summaries</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <h1>Baseball Games Summary</h1>
-    <ul>
-        {% for game in games %}
-        <li>
-            <a href="{{ url_for('game_detail', game_pk=game['game_info']['game_pk']) }}">
-                {{ game['game_info']['away_team'] }} at {{ game['game_info']['home_team'] }}: {{ game['linescore']['away_score'] }} - {{ game['linescore']['home_score'] }}
-            </a>
-        </li>
-        {% endfor %}
-    </ul>
+    <h1>Orioles Game Summaries</h1>
+    {% for article in articles %}
+        <div class="article">
+            {{ article|safe }}
+        </div>
+    {% endfor %}
 </body>
 </html>

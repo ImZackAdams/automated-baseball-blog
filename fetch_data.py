@@ -1,9 +1,10 @@
 import os
 import requests
-from datetime import datetime
 import time
 import logging
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+from transformers import pipeline, set_seed
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -14,6 +15,7 @@ def get_schedule(date):
     logging.info(f"Requesting schedule from: {url}")
     response = requests.get(url)
     if response.status_code == 200:
+        logging.info("Schedule fetched successfully")
         return response.json()
     else:
         logging.error(f"Error: Unable to fetch schedule. Status code: {response.status_code}")
@@ -27,6 +29,7 @@ def get_detailed_game_data(game_pk):
     logging.info(f"Requesting game data from: {url}")
     response = requests.get(url)
     if response.status_code == 200:
+        logging.info("Game data fetched successfully")
         data = response.json()
         result = {
             'game_info': get_game_info(data),
@@ -44,6 +47,7 @@ def get_detailed_game_data(game_pk):
 def get_game_info(data):
     game_data = data['gameData']
     return {
+        'game_pk': game_data['game']['pk'],
         'home_team': game_data['teams']['home']['name'],
         'away_team': game_data['teams']['away']['name'],
         'venue': game_data['venue']['name'],
@@ -114,9 +118,11 @@ def get_highlights(data):
         })
     return highlights
 
-def get_all_games_data(date):
+def get_all_games_data():
+    logging.info("Fetching all games data")
+    date = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
     schedule = get_schedule(date)
-    all_games_data = []
+    orioles_games_data = []
     if schedule:
         if 'dates' in schedule and len(schedule['dates']) > 0:
             games = schedule['dates'][0]['games']
@@ -124,13 +130,17 @@ def get_all_games_data(date):
                 game_pk = game['gamePk']
                 game_data = get_detailed_game_data(game_pk)
                 if game_data:
-                    all_games_data.append(game_data)
+                    home_team = game_data['game_info']['home_team']
+                    away_team = game_data['game_info']['away_team']
+                    if "Orioles" in home_team or "Orioles" in away_team:
+                        orioles_games_data.append(game_data)
+                    logging.info(f"Fetched data for game {game_pk} ({away_team} at {home_team})")
                 time.sleep(1)  # Add a 1-second delay between requests
         else:
             logging.info(f"No games scheduled for {date}")
     else:
         logging.error("Failed to retrieve schedule")
-    return all_games_data
+    return orioles_games_data
 
 def create_batting_chart(game_data):
     try:
@@ -165,3 +175,33 @@ def create_batting_chart(game_data):
         logging.error(f"Error in create_batting_chart: {e}")
         import traceback
         traceback.print_exc()
+
+def generate_article_with_llm(game_data):
+    logging.info(f"Generating article for game on {game_data['game_info']['date']}")
+    # Initialize the GPT-Neo generator on CPU
+    generator = pipeline('text-generation', model='EleutherAI/gpt-neo-1.3B', device=-1)
+
+    # Create a detailed prompt for the LLM
+    prompt = f"Write a detailed sports news article about the baseball game between {game_data['game_info']['away_team']} and {game_data['game_info']['home_team']} on {game_data['game_info']['date']}. "
+    prompt += f"The final score was {game_data['linescore']['away_score']} to {game_data['linescore']['home_score']}. "
+    prompt += f"Highlights of the game include:\n"
+    for highlight in game_data['highlights']:
+        prompt += f"- {highlight['title']} ({highlight['description']})\n"
+
+    # Generate the article using the model
+    generated_text = generator(prompt, max_length=800, num_return_sequences=1)[0]['generated_text']
+    logging.info("Article generated successfully")
+
+    # Return the generated article
+    return generated_text
+
+if __name__ == "__main__":
+    logging.info("Script started")
+    game_data_list = get_all_games_data()
+    if game_data_list:
+        for game_data in game_data_list:
+            article = generate_article_with_llm(game_data)
+            print(article)  # or save it to a file/database
+    else:
+        logging.info("No game data to process")
+    logging.info("Script completed")
