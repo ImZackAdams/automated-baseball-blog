@@ -156,7 +156,7 @@ def create_batting_chart(game_data):
         plt.tight_layout()
 
         current_dir = os.getcwd()
-        file_path = os.path.join(current_dir, 'batting_chart.png')
+        file_path = os.path.join(current_dir, 'static/images/batting_chart.png')
         plt.savefig(file_path)
         plt.close()
         logging.info(f"Chart saved as '{file_path}'")
@@ -165,18 +165,3 @@ def create_batting_chart(game_data):
         logging.error(f"Error in create_batting_chart: {e}")
         import traceback
         traceback.print_exc()
-
-def main():
-    date = "2024-07-10"
-    all_games_data = get_all_games_data(date)
-    if all_games_data:
-        for game in all_games_data:
-            logging.info(f"Game: {game['game_info']['away_team']} at {game['game_info']['home_team']}")
-            logging.info(f"Score: {game['linescore']['away_score']} - {game['linescore']['home_score']}")
-        first_game = all_games_data[0]
-        create_batting_chart(first_game)
-    else:
-        logging.info("No game data retrieved")
-
-if __name__ == "__main__":
-    main()
