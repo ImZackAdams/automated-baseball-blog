@@ -4,7 +4,7 @@ import time
 import logging
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
-from transformers import pipeline, set_seed
+from transformers import pipeline
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -122,25 +122,27 @@ def get_all_games_data():
     logging.info("Fetching all games data")
     date = (datetime.now() - timedelta(1)).strftime('%Y-%m-%d')
     schedule = get_schedule(date)
-    orioles_games_data = []
     if schedule:
         if 'dates' in schedule and len(schedule['dates']) > 0:
             games = schedule['dates'][0]['games']
-            for game in games:
+            if games:
+                game = games[0]
                 game_pk = game['gamePk']
                 game_data = get_detailed_game_data(game_pk)
                 if game_data:
                     home_team = game_data['game_info']['home_team']
                     away_team = game_data['game_info']['away_team']
-                    if "Orioles" in home_team or "Orioles" in away_team:
-                        orioles_games_data.append(game_data)
                     logging.info(f"Fetched data for game {game_pk} ({away_team} at {home_team})")
-                time.sleep(1)  # Add a 1-second delay between requests
+                    return game_data
+                else:
+                    logging.info("No game data to process")
+            else:
+                logging.info(f"No games scheduled for {date}")
         else:
             logging.info(f"No games scheduled for {date}")
     else:
         logging.error("Failed to retrieve schedule")
-    return orioles_games_data
+    return None
 
 def create_batting_chart(game_data):
     try:
@@ -178,8 +180,8 @@ def create_batting_chart(game_data):
 
 def generate_article_with_llm(game_data):
     logging.info(f"Generating article for game on {game_data['game_info']['date']}")
-    # Initialize the GPT-Neo generator on CPU
-    generator = pipeline('text-generation', model='EleutherAI/gpt-neo-1.3B', device=-1)
+    # Initialize the GPT-Neo generator with a smaller model
+    generator = pipeline('text-generation', model='EleutherAI/gpt-neo-125M', device=-1)
 
     # Create a detailed prompt for the LLM
     prompt = f"Write a detailed sports news article about the baseball game between {game_data['game_info']['away_team']} and {game_data['game_info']['home_team']} on {game_data['game_info']['date']}. "
@@ -188,8 +190,9 @@ def generate_article_with_llm(game_data):
     for highlight in game_data['highlights']:
         prompt += f"- {highlight['title']} ({highlight['description']})\n"
 
+    logging.info("Prompt created, starting generation")
     # Generate the article using the model
-    generated_text = generator(prompt, max_length=800, num_return_sequences=1)[0]['generated_text']
+    generated_text = generator(prompt, max_length=800, num_return_sequences=1, truncation=True)[0]['generated_text']
     logging.info("Article generated successfully")
 
     # Return the generated article
@@ -197,11 +200,15 @@ def generate_article_with_llm(game_data):
 
 if __name__ == "__main__":
     logging.info("Script started")
-    game_data_list = get_all_games_data()
-    if game_data_list:
-        for game_data in game_data_list:
-            article = generate_article_with_llm(game_data)
-            print(article)  # or save it to a file/database
+    game_data = get_all_games_data()
+    if game_data:
+        article = generate_article_with_llm(game_data)
+        print(article)  # Print to console
+        # Save the article to a file
+        file_name = f"{game_data['game_info']['date']}_{game_data['game_info']['away_team']}_at_{game_data['game_info']['home_team']}.txt"
+        with open(file_name, 'w') as file:
+            file.write(article)
+        logging.info(f"Article saved as {file_name}")
     else:
         logging.info("No game data to process")
     logging.info("Script completed")
