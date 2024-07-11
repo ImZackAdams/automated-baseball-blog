@@ -1,10 +1,13 @@
 import os
+import random
 import requests
 import time
 import logging
-import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from transformers import pipeline
+
+# Set environment variable to handle unsupported operations on MPS if using Apple Silicon Mac
+os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -31,14 +34,13 @@ def get_detailed_game_data(game_pk):
     if response.status_code == 200:
         logging.info("Game data fetched successfully")
         data = response.json()
-        result = {
+        return {
             'game_info': get_game_info(data),
             'linescore': get_linescore(data),
             'batting_stats': get_batting_stats(data),
             'pitching_stats': get_pitching_stats(data),
             'highlights': get_highlights(data)
         }
-        return result
     else:
         logging.error(f"Error: Unable to fetch game data. Status code: {response.status_code}")
         logging.error(f"Response content: {response.text}")
@@ -144,81 +146,45 @@ def get_all_games_data():
         logging.error("Failed to retrieve schedule")
     return None
 
-def create_batting_chart(game_data):
-    try:
-        away_team = game_data['game_info']['away_team']
-        home_team = game_data['game_info']['home_team']
-        away_batters = game_data['batting_stats']['away']
-        home_batters = game_data['batting_stats']['home']
-        away_top5 = sorted(away_batters, key=lambda x: x['h'], reverse=True)[:5]
-        home_top5 = sorted(home_batters, key=lambda x: x['h'], reverse=True)[:5]
-        players = [player['name'] for player in away_top5 + home_top5]
-        hits = [player['h'] for player in away_top5 + home_top5]
-        rbis = [player['rbi'] for player in away_top5 + home_top5]
+from transformers import pipeline
+import logging
 
-        plt.figure(figsize=(12, 6))
-        x = range(len(players))
-        plt.bar([i - 0.2 for i in x], hits, 0.4, label='Hits')
-        plt.bar([i + 0.2 for i in x], rbis, 0.4, label='RBIs')
-        plt.ylabel('Count')
-        plt.title(f'Top 5 Batters: {away_team} vs {home_team}')
-        plt.xticks(x, players, rotation=45, ha='right')
-        plt.legend()
-        plt.axvline(x=4.5, color='red', linestyle='--')
-        plt.tight_layout()
+import torch
+from transformers import pipeline
+import logging
 
-        current_dir = os.getcwd()
-        file_path = os.path.join(current_dir, 'static/images/batting_chart.png')
-        plt.savefig(file_path)
-        plt.close()
-        logging.info(f"Chart saved as '{file_path}'")
+def generate_narrative_style_article(game_data):
+    logging.info(f"Generating narrative-style article for game on {game_data['game_info']['date']}")
 
-    except Exception as e:
-        logging.error(f"Error in create_batting_chart: {e}")
-        import traceback
-        traceback.print_exc()
+    # Initialize the GPT-Neo model pipeline
+    device = -1  # Assuming CPU usage
+    generator = pipeline('text-generation', model='EleutherAI/gpt-neo-125M', device=device)
 
-def generate_article_with_llm(game_data):
-    logging.info(f"Generating article for game on {game_data['game_info']['date']}")
-    # Initialize the GPT-Neo generator with a smaller model
-    generator = pipeline('text-generation', model='EleutherAI/gpt-neo-125M', device=-1)
+    # Construct a detailed prompt with unique player statistics
+    prompt = f"The game at {game_data['game_info']['venue']} on {game_data['game_info']['date']} featured a thrilling match between {game_data['game_info']['home_team']} and {game_data['game_info']['away_team']}. Here are some highlights and key performances:"
 
-    # Create a detailed prompt for the LLM
-    prompt = (f"A Tale of Two Pitchers: An Evening at {game_data['game_info']['venue']}\n\n"
-              f"Sweat dripped down foreheads and soaked through shirts at {game_data['game_info']['venue']}, the evening heat suffocating like a bad dream you can't wake from. "
-              f"The crowd, strong, was a mass of restless bodies waiting for something to happen. And something did.\n"
-              f"{game_data['game_info']['home_team']} stood on the mound, cool as a poet in a bar. "
-              f"Six innings, six hits, no runs. He played his game with the precision of a man who knows what it means to struggle. Each pitch a knife through the humid air, cutting down batters like they were nothing but tall weeds.\n"
-              f"{game_data['game_info']['away_team']} was on the other side, a pitcher with stats that looked good on paper but told a different story in real life. "
-              f"Six innings, nine hits, three runs. The numbers might look respectable, but under the bright lights, every pitch seemed to weigh him down more. His ERA, a haunting 2.43, whispered the truth—sometimes you're your own worst enemy.\n"
-              f"Final Score: {game_data['linescore']['away_score']} - {game_data['linescore']['home_score']}.\n\n"
-              f"Top batting performances:\n")
-    for batter in game_data['batting_stats']['away'][:3] + game_data['batting_stats']['home'][:3]:
-        prompt += f"- {batter['name']} ({batter['position']}): {batter['h']} hits, {batter['rbi']} RBIs\n"
+    player_contributions = {}
+    for team in ['home', 'away']:
+        for player_stats in game_data['batting_stats'][team]:
+            player_key = player_stats['name']
+            if player_key not in player_contributions or player_stats['h'] > player_contributions[player_key][1]:  # Only add if this is a better performance or not added yet
+                player_contributions[player_key] = (f"{player_stats['name']} with {player_stats['h']} hits and {player_stats['rbi']} RBIs", player_stats['h'])
 
-    prompt += "\nTop pitching performances:\n"
-    for pitcher in game_data['pitching_stats']['away'][:2] + game_data['pitching_stats']['home'][:2]:
-        prompt += f"- {pitcher['name']}: {pitcher['ip']} innings pitched, {pitcher['so']} strikeouts\n"
+    for contribution, _ in player_contributions.values():
+        prompt += f"\n- {contribution}"
 
-    logging.info("Prompt created, starting generation")
-    # Generate the article using the model
-    generated_text = generator(prompt, max_length=800, num_return_sequences=1, truncation=True)[0]['generated_text']
-    logging.info("Article generated successfully")
+    logging.debug("Final prompt to model: " + prompt)
 
-    # Return the generated article
+    # Generate the narrative
+    generated_text = generator(prompt, max_length=500, num_return_sequences=1, no_repeat_ngram_size=2, truncation=True)[0]['generated_text']
+    logging.info("Narrative article generated successfully")
+
     return generated_text
-
+# Example usage
 if __name__ == "__main__":
     logging.info("Script started")
     game_data = get_all_games_data()
     if game_data:
-        article = generate_article_with_llm(game_data)
-        print(article)  # Print to console
-        # Save the article to a file
-        file_name = f"{game_data['game_info']['date']}_{game_data['game_info']['away_team']}_at_{game_data['game_info']['home_team']}.txt"
-        with open(file_name, 'w') as file:
-            file.write(article)
-        logging.info(f"Article saved as {file_name}")
-    else:
-        logging.info("No game data to process")
+        narrative_article = generate_narrative_style_article(game_data)
+        print(narrative_article)
     logging.info("Script completed")
